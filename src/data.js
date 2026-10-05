@@ -1,14 +1,26 @@
 export const today = new Date().toISOString().slice(0, 10)
 const days = (date) => Math.ceil((new Date(`${date}T00:00:00`) - new Date(`${today}T00:00:00`)) / 86400000)
+// 默认借用周期：旧外借记录没有应还日期时，统一按「借出日期 + 14 天」补齐
+export const DEFAULT_LOAN_DAYS = 14
+const pad = (n) => String(n).padStart(2, '0')
+// 日期加减（本地时区），返回 YYYY-MM-DD
+export const addDays = (date, n) => { const d = new Date(`${date}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+// 逾期天数：仅「借用中」且应还日期已过的记录大于 0；缺少应还日期或日期异常时安全返回 0，不影响其他记录的判断
+export const overdueDays = (entry) => { if (entry?.status !== '借用中' || !entry?.dueDate) return 0; const d = -days(entry.dueDate); return Number.isFinite(d) ? Math.max(0, d) : 0 }
+export const isOverdue = (entry) => overdueDays(entry) > 0
+// 迁移旧记录：有借出日期但无应还日期的，按默认借用周期补齐；连借出日期都没有的保持空缺，视为未约定（不参与逾期判断，也不会被误判逾期）
+export const migrateUsage = (entry) => (entry.dueDate || !entry.date ? entry : { ...entry, dueDate: addDays(entry.date, DEFAULT_LOAN_DAYS) })
 export const config = {
   storageKey: 'family-document-keeper-v1',
   brand: '家档管家', subtitle: 'Family Archive', icon: 'FolderLock', entityLabel: '证件档案', secondaryLabel: '家庭保险', historyLabel: '使用记录', heroTitle: '让重要文件，始终井然有序。', heroCopy: '证件、保单和家庭文件，都有清晰的去处与提醒。', createLabel: '新建档案',
+  loanRuleNote: `历史外借记录未约定应还日期的，已按「借出后 ${DEFAULT_LOAN_DAYS} 天」自动补齐`,
   nav: [{ id: 'overview', label: '总览' }, { id: 'documents', label: '证件档案' }, { id: 'history', label: '使用记录' }, { id: 'insurance', label: '家庭保险' }, { id: 'achievements', label: '成就与榜单' }],
   metrics: [
     { label: '证件总数', collection: 'documents', tone: 'green' },
     { label: '90天内到期', tone: 'peach', value: (s) => s.documents.filter((x) => x.expires && days(x.expires) >= 0 && days(x.expires) <= 90).length },
     { label: '已过期', tone: 'red', value: (s) => s.documents.filter((x) => x.expires && days(x.expires) < 0).length },
     { label: '外借未还', tone: 'blue', value: (s) => s.usages.filter((x) => x.status === '借用中').length },
+    { label: '逾期未还', tone: 'red', value: (s) => s.usages.filter((x) => isOverdue(x)).length },
   ],
   form: { title: '新建证件档案', collection: 'documents', fields: [
     ['name', '证件名称', '身份证'], ['category', '类别', '身份类'], ['holder', '持有人', '林小满'], ['number', '证件号码', '110***********'], ['issued', '签发日期', '2023-01-01', 'date'], ['expires', '有效期至', '2033-01-01', 'date'], ['issuer', '发证机关', 'XX市公安局'], ['location', '存放位置', '保险柜'], ['copyLocation', '复印件位置', '云盘 / 家庭共享'], ['notes', '备注', ''],
@@ -22,7 +34,7 @@ export const seed = {
     { id: 'doc-2', name: '家庭医疗保险合同', category: '医疗类', holder: '林家', number: 'POL-2026-019', issued: '2026-01-01', expires: '2026-11-20', issuer: '安和保险', location: '书房文件盒', copyLocation: '云盘 / 保单', notes: '续保前确认受益人' },
     { id: 'doc-3', name: '周末房产合同', category: '资产类', holder: '林小满', number: 'PROP-0081', issued: '2024-06-12', expires: '2026-08-10', issuer: '杭城置业', location: '主卧抽屉', copyLocation: '云盘 / 房产', notes: '已过期的合同提醒仅供归档' },
   ],
-  usages: [{ id: 'use-1', documentId: 'doc-1', date: '2026-09-16', purpose: '办理银行业务', borrower: '林小满', status: '借用中', note: '周五归还' }, { id: 'use-2', documentId: 'doc-2', date: '2026-08-11', purpose: '理赔资料', borrower: '林小满', status: '已归还', note: '' }],
+  usages: [{ id: 'use-1', documentId: 'doc-1', date: '2026-09-16', dueDate: '2026-09-30', purpose: '办理银行业务', borrower: '林小满', status: '借用中', note: '周五归还' }, { id: 'use-2', documentId: 'doc-2', date: '2026-08-11', dueDate: '2026-08-25', purpose: '理赔资料', borrower: '林小满', status: '已归还', note: '' }, { id: 'use-3', documentId: 'doc-3', date: '2026-10-02', dueDate: '2026-10-16', purpose: '银行面签材料', borrower: '周予安', status: '借用中', note: '' }],
   policies: [{ id: 'pol-1', company: '安和保险', type: '家庭医疗险', number: 'AH-33001', insured: '林家', expires: '2026-11-20', premium: 2890, payment: '年缴' }],
 }
 export { days }
